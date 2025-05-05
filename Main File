@@ -1,0 +1,117 @@
+import pandas as pd
+import numpy as np
+import os
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor
+
+from sklearn.metrics import r2_score, mean_squared_error
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# ---------------------------------------------
+def clean_dataset1(df):
+    df.columns = df.columns.str.strip()
+    df = df.dropna()
+    target = 'Concrete compressive strength(MPa, megapascals)'
+    return df.drop(columns=[target]), df[target], target
+
+def clean_dataset2(df):
+    df = df.dropna()
+    target = 'Cs_(Mpa)'
+    numeric_df = df.select_dtypes(include=[np.number])
+    return numeric_df.drop(columns=[target]), numeric_df[target], target
+
+def clean_dataset3(df):
+    df = df.dropna()
+    target = 'CS'
+    return df.drop(columns=[target]), df[target], target
+
+# ---------------------------------------------
+def train_and_evaluate(X, y, dataset_name):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    models = {
+        'Linear Regression': LinearRegression(),
+        'Decision Tree': DecisionTreeRegressor(random_state=42),
+        'Random Forest': RandomForestRegressor(random_state=42)
+    }
+
+    results = []
+    predictions = []
+
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+
+        r2 = r2_score(y_test, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+
+        results.append({'Dataset': dataset_name, 'Model': name, 'R2 Score': r2, 'RMSE': rmse})
+
+        pred_df = pd.DataFrame({
+            'Dataset': dataset_name,
+            'Model': name,
+            'Actual': y_test.values,
+            'Predicted': y_pred
+        })
+        predictions.append(pred_df)
+
+    return pd.DataFrame(results), pd.concat(predictions)
+
+# ---------------------------------------------
+if _name_ == "_main_":
+    datasets = [
+        ('Dataset 1', 'C:/Users/tabre/OneDrive/Desktop/Ai project/1.csv', clean_dataset1),
+        ('Dataset 2', 'C:/Users/tabre/OneDrive/Desktop/Ai project/2.csv', clean_dataset2),
+        ('Dataset 3', 'C:/Users/tabre/OneDrive/Desktop/Ai project/3.csv', clean_dataset3)
+    ]
+
+    all_results = []
+    all_predictions = []
+
+    for name, path, cleaner in datasets:
+        print(f"\nAnalyzing {name} -> {os.path.basename(path)}")
+        df = pd.read_csv(path)
+        X, y, target_name = cleaner(df)
+        result_df, pred_df = train_and_evaluate(X, y, name)
+        print(result_df)
+        all_results.append(result_df)
+        all_predictions.append(pred_df)
+
+    # Combine and plot performance metrics
+    final_results = pd.concat(all_results)
+    sns.set(style="whitegrid")
+    plt.figure(figsize=(10, 6))
+    sns.barplot(data=final_results, x='Dataset', y='R2 Score', hue='Model')
+    plt.title("R² Score Comparison Across Models and Datasets")
+    plt.ylabel("R² Score")
+    plt.tight_layout()
+    plt.show()
+
+    # Combine and plot predictions
+    prediction_df = pd.concat(all_predictions)
+
+
+    # Define helper function to draw the ideal reference line (y = x)
+    def identity_line(data, **kwargs):
+        ax = plt.gca()
+        lims = [
+            min(data['Actual'].min(), data['Predicted'].min()),
+            max(data['Actual'].max(), data['Predicted'].max())
+        ]
+        ax.plot(lims, lims, ls='--', c='red', label='Ideal')
+        ax.legend()
+
+
+    # Create the grid of scatterplots
+    g = sns.FacetGrid(prediction_df, col='Dataset', row='Model', margin_titles=True, height=3.5)
+    g.map_dataframe(sns.scatterplot, x='Actual', y='Predicted', alpha=0.7)
+    g.map_dataframe(identity_line)
+    g.set_axis_labels("Actual Strength", "Predicted Strength")
+    g.fig.subplots_adjust(top=0.9)
+    g.fig.suptitle("Actual vs Predicted Compressive Strength")
+    plt.show()
